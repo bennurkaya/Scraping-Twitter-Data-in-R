@@ -1,0 +1,455 @@
+---
+title: "Scraping Twitter Data"
+author: "Bennur Kaya"
+date: "2022-10-11"
+output: word_document
+---
+
+
+```{r}
+#install.packages("rtweet")
+#install.packages("magrittr") # package installations are only needed the first time you use it
+#install.packages("dplyr")    # alternative installation of the %>%
+#install.packages("stringr")  
+#install.packages("tidytext")  
+#install.packages("rvest")  
+```
+
+```{r}
+library(rtweet)
+library(magrittr) # needs to be run every time you start R and want to use %>%
+library(dplyr)    # alternatively, this also loads %>%
+library(stringr)  
+library(tidytext)
+library(rvest)
+```
+
+Comparing Twitter Accounts: I will use Twitter data of Boris Johnson who is former Prime Minister of the United Kingdom of Great Britain and Liz Truss who is the current Prime Minister.
+ 
+
+```{r}
+#Alexander Boris de Pfeffel Johnson Hon FRIBA is a British politician who served as Prime Minister of the United Kingdom and Leader of the Conservative Party from 2019 to 2022.
+
+b_johnson_tweets <- get_timeline("BorisJohnson", n = 3200)
+b_johnson_tweets
+```
+
+```{r}
+# select variables of interest
+
+b_johnson_short <- b_johnson_tweets %>%
+  filter(retweeted == "FALSE") %>%
+  mutate(screen_name = "b_johnson") %>% 
+  select(created_at, screen_name, text, 
+         favorite_count, retweet_count)
+
+b_johnson_short
+```
+
+```{r}
+# learning some things about data types
+b_johnson_short %>% select(text, retweet_count)
+class(b_johnson_short$text)
+class(b_johnson_short$retweet_count)
+```
+
+```{r}
+length(b_johnson_short$text)
+length(b_johnson_short[1,3])
+str_length(b_johnson_short[1,3])
+```
+
+```{r}
+b_johnson_short %>% 
+  select(text) %>% 
+  head(2) %>% 
+  pull()
+```
+
+
+
+```{r}
+# Mary Elizabeth Truss (born 26 July 1975) is a British politician who is the current prime minister of the United Kingdom and leader of the Conservative Party.
+
+liztruss <- get_timeline("trussliz", n = 3200)
+liztruss
+```
+
+```{r}
+# select variables of interest
+liztruss_short <- liztruss %>%
+  filter(retweeted == "FALSE") %>%
+  mutate(screen_name = "liztruss") %>% 
+  select(created_at, screen_name, text, 
+         favorite_count, retweet_count)
+
+liztruss_short
+```
+
+```{r}
+# learning some things about data types
+liztruss_short %>% select(text, retweet_count)
+class(liztruss_short$text)
+class(liztruss_short$retweet_count)
+```
+
+```{r}
+length(liztruss_short$text)
+length(liztruss_short[1,3])
+str_length(liztruss_short[1,3])
+```
+
+```{r}
+liztruss_short %>% 
+  select(text) %>% 
+  head(2) %>% 
+  pull()
+```
+
+```{r}
+tweets <- bind_rows(b_johnson_short, liztruss_short)
+tweets
+```
+
+```{r}
+# some basic cleaning and extraction
+# of meta data with regex
+tweets <- tweets %>%
+  mutate(
+    # identify tweets with hashtags
+    has_tag = str_detect(text, "#\\w+"),
+    # how many at-mentions are there?
+    n_at = str_count(text, "(^|\\s)@\\w+"),
+    # extract first url
+    url = str_extract(text, "(https?://\\S+)"),
+    # remove at-mentions, tags, and urls
+    clean_text = str_replace_all(text, 
+                                 "(^|\\s)(@|#|https?://)\\S+", " ") %>% 
+      str_replace_all("\\W+", " ")
+  )
+```
+
+```{r}
+tweets %>%
+  filter(has_tag == TRUE) %>%
+  pull(text) %>% 
+  str_extract_all("#\\w+") %>% 
+  head(10)
+```
+
+```{r}
+tweets %>%
+  filter(n_at > 0) %>%
+  select(text)
+```
+
+```{r}
+tokens <- tweets %>% 
+  unnest_tokens(word, clean_text) %>% 
+  select(screen_name, word)
+
+tokens
+```
+
+```{r}
+# english stop words
+data(stop_words)
+
+stop_words
+```
+
+```{r}
+tokens <- tokens %>% 
+  anti_join(stop_words)
+
+tokens
+```
+
+```{r}
+tokens %>% 
+  count(word, screen_name, sort = TRUE) %>% 
+  filter(screen_name == "b_johnson")
+```
+
+```{r}
+tokens %>% 
+  count(word, screen_name, sort = TRUE) %>% 
+  filter(screen_name == "liztruss")
+```
+
+
+
+```{r}
+b_johnson_tokens <- b_johnson_tweets %>% 
+  mutate(
+    # identify tweets with hashtags
+    has_tag = str_detect(text, "#\\w+"),
+    # how many at-mentions are there?
+    n_at = str_count(text, "(^|\\s)@\\w+"),
+    # extract first url
+    url = str_extract(text, "(https?://\\S+)"),
+    # remove at-mentions, tags, and urls
+    clean_text = str_replace_all(text, 
+                                 "(^|\\s)(@|#|https?://)\\S+", " ") %>% 
+      str_replace_all("\\W+", " ")
+  ) %>% 
+  unnest_tokens(word, clean_text)
+
+```
+
+```{r}
+liztruss_tokens <- liztruss %>% 
+  mutate(
+    # identify tweets with hashtags
+    has_tag = str_detect(text, "#\\w+"),
+    # how many at-mentions are there?
+    n_at = str_count(text, "(^|\\s)@\\w+"),
+    # extract first url
+    url = str_extract(text, "(https?://\\S+)"),
+    # remove at-mentions, tags, and urls
+    clean_text = str_replace_all(text, 
+                                 "(^|\\s)(@|#|https?://)\\S+", " ") %>% 
+      str_replace_all("\\W+", " ")
+  ) %>% 
+  unnest_tokens(word, clean_text)
+```
+
+```{r}
+data(stop_words)
+
+clean_tokens1 <- 
+  b_johnson_tokens %>% 
+    select(word) %>% 
+    anti_join(stop_words)
+
+clean_tokens1 %>% 
+  count(word, sort = TRUE) %>% 
+    head(10)
+```
+
+```{r}
+clean_tokens2 <- 
+  liztruss_tokens %>% 
+    select(word) %>% 
+    anti_join(stop_words)
+
+clean_tokens2 %>% 
+  count(word, sort = TRUE)%>% 
+    head(10)
+```
+```{r}
+library(RVerbalExpressions)
+regex <- 
+  rx_with_any_case() %>% 
+  rx_either_of("ukraine", "russia")
+```
+
+```{r}
+b_johnson_tweets %>% 
+  filter(str_detect(text, regex)) %>% 
+  select(text) %>% 
+  head(3)
+```
+```{r}
+liztruss %>% 
+  filter(str_detect(text, regex)) %>% 
+  select(text) %>% 
+  head(3) 
+```
+
+```{r}
+all <- bind_rows(b_johnson_tweets, liztruss)
+
+regex <- 
+  rx_with_any_case() %>% 
+  rx_either_of("angry ", "anger ", "happy ", "happiness")
+
+all %>% 
+  filter(str_detect(text, regex)) %>% 
+  select(text) %>% 
+  head(3)
+```
+THE CORPUS OBJECT
+```{r}
+library(quanteda)
+
+# rename user id and add row_id
+# all <- all %>% 
+#   mutate(user_id = id) %>% 
+#   select(-id) %>% 
+#   rowid_to_column("id")
+
+# Error in rowid_to_column(., "id") : 
+#  could not find function "rowid_to_column"
+
+tweets_corpus <- corpus(all,
+                        docid_field = "id",
+                        text_field = "text")
+```
+
+```{r}
+head(tweets_corpus)
+```
+
+
+```{r someVar, echo=FALSE}
+summary(tweets_corpus, n = 10)
+```
+
+```{r}
+# now we can tokenize again
+tweet_tokens <- quanteda::tokens(tweets_corpus, 
+                                 remove_punct = TRUE,   # removes punctuations
+                                 remove_numbers = TRUE, # removes numbers
+                                 remove_symbols = TRUE, # removes symbols (also: emojis)
+                                 remove_url = TRUE)     # removes urls
+
+head(tweet_tokens, 6)
+```
+```{r}
+# lower key tokens
+tweet_tokens_lk <- tweet_tokens %>% tokens_tolower()
+
+# remove stop words
+tweet_tokens_nosw <- tweet_tokens_lk %>% 
+  tokens_remove(stopwords("english"))
+
+head(tweet_tokens_nosw,6)
+
+```
+
+```{r}
+# STEMMING
+
+tweet_tokens_nosw %>% tokens_wordstem() %>% 
+    head()
+```
+
+
+```{r}
+tweets <- b_johnson_tweets
+corpus <- corpus(tweets,
+                 docid_field = "id",
+                 text_field = "text")
+
+library(udpipe)
+
+ud_model_en <- udpipe_download_model(language = "english")
+
+udpipe_lemmas <- udpipe(tweets$text, object = ud_model_en)
+
+# hack in screen_name
+udpipe_lemmas <- 
+  udpipe_lemmas %>% 
+  mutate(
+    screen_name = if_else(doc_id %in% str_c("doc", 1:1200), "BorisJohnson", "trussliz")
+  )
+
+docs <- udpipe_lemmas %>%
+  group_by(doc_id) %>%
+  summarize(text = paste(lemma, collapse = " "), screen_name = screen_name) %>% 
+  distinct()
+
+lemma_tokens_nosw <- docs %>%
+  corpus() %>%
+  quanteda::tokens(remove_punct = TRUE,
+                   remove_numbers = TRUE,
+                   remove_symbols = TRUE,
+                   remove_separators = TRUE,
+                   remove_url = TRUE) %>% 
+  tokens_tolower() %>% 
+  tokens_remove(stopwords("english"))
+
+library(quanteda.textstats)
+
+lemma_tokens_nosw %>% 
+  textstat_collocations() %>% 
+  arrange(desc(count)) %>% 
+  head(10)
+```
+
+```{r}
+kwic(lemma_tokens_nosw, pattern = phrase("brexit"))
+```
+
+```{r}
+# preserve in BOW approach
+toks_comp <- tokens_compound(lemma_tokens_nosw,
+                             pattern = phrase("get brexit"))
+
+kwic(toks_comp, pattern = phrase("get brexit"))
+## Keyword-in-context with 0 matches.
+kwic(toks_comp, pattern = phrase("get_brexit"))
+```
+
+```{r}
+#N-GRAMS
+tokens_ngrams <- lemma_tokens_nosw %>%
+  tokens_ngrams(n = 2:5)
+
+tokens_ngrams
+```
+
+```{r}
+dfm <- dfm(lemma_tokens_nosw)
+
+dfm
+```
+
+```{r}
+topfeatures(dfm, groups = screen_name)
+```
+
+```{r}
+dfm_mentions <- dfm_select(dfm, "@*")
+
+topfeatures(dfm_mentions, groups = screen_name)
+```
+
+```{r}
+# COMPARE
+# grouped DFM
+tweet_dfm_grouped <- dfm_group(dfm, groups = screen_name)
+
+# wordcloud
+library(quanteda.textplots)
+textplot_wordcloud(tweet_dfm_grouped, 
+                   max_words = 100, 
+                   comparison = TRUE, 
+                   color = c("blue", "red"))
+```
+
+```{r}
+# LEXICAL DIVERSITY
+
+# lexical diversity
+# quantifies how lexically rich a text is,
+# e.g. Type-Token Ratio (TTR), which divides the amount
+# of unique tokens through all tokens within a corpus.
+# it is useful, for instance, for analysing speakers’ or
+# writers’ linguistic skills, or the complexity of ideas expressed
+# in documents.
+lexdiv <- textstat_lexdiv(tweet_dfm_grouped)
+lexdiv
+```
+
+```{r}
+# KEYNESS
+# keyness: quantifies the uniqueness of words for a corpus as
+# compared to another corpus (using chi-squared statistics)
+textstat_keyness(tweet_dfm_grouped, target = "BorisJohnson") %>% 
+  as_tibble()
+```
+
+```{r}
+textstat_keyness(tweet_dfm_grouped, target = "trussliz") %>% 
+  as_tibble()
+```
+
+```{r}
+# plot
+textstat_keyness(tweet_dfm_grouped, target = "BorisJohnson") %>% 
+  textplot_keyness(n = 10, color = c("darkred", "darkblue"))
+```
+
+
